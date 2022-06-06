@@ -1,5 +1,3 @@
-// use std::io::{self, BufRead};
-
 // _direnv_hook () {
 //     trap -- '' SIGINT
 //     eval "$(/Users/b.caldwell/code/src/github.com/bcaldwell/direnv-pretty/target/debug/direnv-pretty)"
@@ -7,11 +5,15 @@
 // }
 //     eval "$(direnv export zsh 2> >( /Users/b.caldwell/code/src/github.com/bcaldwell/direnv-pretty/target/debug/direnv-pretty ))"
 //     eval "$("/nix/store/nqsbh35psklpnlv27zrqshn9vfmjdqdc-direnv-2.30.3/bin/direnv" export zsh | /Users/b.caldwell/code/src/github.com/bcaldwell/direnv-pretty/target/debug/direnv-pretty)"
+use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Instant;
+use which::which;
+
+use clap::Parser;
 
 // stealing from https://github.com/Shopify/shadowenv/blob/b4c8979f3a80fd6152e836594a66563441bbf4d8/src/output.rs
 // "direnv" in a gradient of lighter to darker grays. Looks good on dark backgrounds and ok on
@@ -25,19 +27,100 @@ const LONG_EXEC_TIME: u32 = 300;
 const MS_TO_S: f32 = 1000.0;
 // const FEATURE_PREFIX:String = "use ".to_string();
 
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// Name of the person to greet
+    #[clap(short, long)]
+    direnv: Option<String>,
+    args: Vec<String>,
+}
+
+// impl Args {
+//     // -> io::Result<Output>
+//     fn run_command(&self, connect_stdout: bool) {
+//         let default_direnv = "direnv";
+//         let cmd = Command::new(
+//             self.direnv
+//                 .as_ref()
+//                 .unwrap_or(&default_direnv.to_string())
+//                 .to_string(),
+//         )
+//         .args(&self.args);
+//         if connect_stdout {
+//             cmd.spawn();
+//             return;
+//         }
+
+//         cmd.stdin(Stdio::piped()) // connect stdin
+//             .output();
+//         return;
+//     }
+// }
+
 fn main() {
-    // let stdin = io::stdin();
-    // for line in stdin.lock().lines() {
-    //     let line = line.expect("Could not read line from standard in");
-    //     eprintln!("Captured line: {}", line);
-    // }
+    let args = Args::parse();
+
+    if args.args.len() == 0 {
+        return;
+    }
+
+    // println!("{:?}", args.run_command());
+
+    match args.args[0].as_str() {
+        "export" => run_export(args),
+        "hook" => run_hook(args),
+        _ => run_default(args),
+    };
+}
+
+fn run_default(args: Args) {
+    let default_direnv = "direnv";
+    Command::new(
+        args.direnv
+            .as_ref()
+            .unwrap_or(&default_direnv.to_string())
+            .to_string(),
+    ).args(&args.args).status().expect("failed to run direnv");
+}
+
+fn run_hook(args: Args) {
+    let default_direnv = "direnv";
+    let output = Command::new(
+        args.direnv
+            .as_ref()
+            .unwrap_or(&default_direnv.to_string())
+            .to_string(),
+    ).args(&args.args).output().expect("failed to run direnv");
+
+    let stdout = String::from_utf8(output.stdout).expect("failed to get stdout");
+    // let replace_regex = Regex::new(r#"(eval "\$\(")(.+)(" export .+\)";)"#).unwrap();
+    // let rg = Regex::new(r#"(eval "\$\(")(.+)(" export .+\)";)"#).unwrap();
+    // let a = rg.replace("eval \"$(\"/Users/b.caldwell/.nix-profile/bin/direnv\" export zsh)\";", "$1/path$3");
+
+    let direnv_path = which("direnv").unwrap().into_os_string().into_string().unwrap();
+    let direnv_pretty_path = env::current_exe().unwrap().into_os_string().into_string().unwrap();
+    let updated_output = stdout.replace(&direnv_path, &direnv_pretty_path);
+
+    println!(
+        "{}",
+        updated_output
+    );
+    eprintln!(
+        "{}",
+        String::from_utf8(output.stderr).expect("failed to get stdout")
+    );
+}
+
+fn run_export(args: Args) {
     let now = Instant::now();
-    let cmd = Command::new("direnv");
-    let output = Command::new("direnv")
-        .arg("export")
-        .arg("zsh")
-        // connect stdin
-        .stdin(Stdio::piped())
+    let default_direnv = "direnv";
+    let output = Command::new(
+        args.direnv
+            .as_ref()
+            .unwrap_or(&default_direnv.to_string())
+            .to_string(),
+    ).args(&args.args)
         .output()
         .expect("failed to execute process");
     // forward stdout as is

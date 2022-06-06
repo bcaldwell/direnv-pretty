@@ -14,6 +14,7 @@
             pkgs.rustc
             pkgs.rustup
             pkgs.rustfmt
+            pkgs.cargo-edit
           ];
           buildInputs = [ ];
           # Certain Rust tools won't work without this
