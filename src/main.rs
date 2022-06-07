@@ -37,15 +37,16 @@ struct Args {
 }
 
 impl Args {
-    // -> io::Result<Output>
-    fn build_command(&self) -> Command {
+    fn resolve_direnv_path(&self) -> String {
         let default_direnv = "direnv";
-        let mut cmd = Command::new(
-            self.direnv
-                .as_ref()
-                .unwrap_or(&default_direnv.to_string())
-                .to_string(),
-        );
+        return self
+            .direnv
+            .as_ref()
+            .unwrap_or(&default_direnv.to_string())
+            .to_string();
+    }
+    fn build_command(&self) -> Command {
+        let mut cmd = Command::new(self.resolve_direnv_path());
         cmd.args(&self.args)
             // connect stdin, only care about stdout/stderr
             .stdin(Stdio::piped());
@@ -85,7 +86,7 @@ fn run_hook(args: Args) {
 
     // detect current direnv path and replace it with the pretty version
     // pass the current path in as a flag --direnv
-    let direnv_path = which("direnv")
+    let direnv_path = which(args.resolve_direnv_path())
         .unwrap()
         .into_os_string()
         .into_string()
