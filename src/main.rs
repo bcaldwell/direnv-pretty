@@ -36,27 +36,23 @@ struct Args {
     args: Vec<String>,
 }
 
-// impl Args {
-//     // -> io::Result<Output>
-//     fn run_command(&self, connect_stdout: bool) {
-//         let default_direnv = "direnv";
-//         let cmd = Command::new(
-//             self.direnv
-//                 .as_ref()
-//                 .unwrap_or(&default_direnv.to_string())
-//                 .to_string(),
-//         )
-//         .args(&self.args);
-//         if connect_stdout {
-//             cmd.spawn();
-//             return;
-//         }
+impl Args {
+    // -> io::Result<Output>
+    fn build_command(&self) -> Command {
+        let default_direnv = "direnv";
+        let mut cmd = Command::new(
+            self.direnv
+                .as_ref()
+                .unwrap_or(&default_direnv.to_string())
+                .to_string(),
+        );
+        cmd.args(&self.args)
+            // connect stdin, only care about stdout/stderr
+            .stdin(Stdio::piped());
 
-//         cmd.stdin(Stdio::piped()) // connect stdin
-//             .output();
-//         return;
-//     }
-// }
+        return cmd;
+    }
+}
 
 fn main() {
     let args = Args::parse();
@@ -64,8 +60,6 @@ fn main() {
     if args.args.len() == 0 {
         return;
     }
-
-    // println!("{:?}", args.run_command());
 
     match args.args[0].as_str() {
         "export" => run_export(args),
@@ -75,54 +69,47 @@ fn main() {
 }
 
 fn run_default(args: Args) {
-    let default_direnv = "direnv";
-    Command::new(
-        args.direnv
-            .as_ref()
-            .unwrap_or(&default_direnv.to_string())
-            .to_string(),
-    ).args(&args.args).status().expect("failed to run direnv");
+    args.build_command().status().expect("failed to run direnv");
 }
 
 fn run_hook(args: Args) {
-    let default_direnv = "direnv";
-    let output = Command::new(
-        args.direnv
-            .as_ref()
-            .unwrap_or(&default_direnv.to_string())
-            .to_string(),
-    ).args(&args.args).output().expect("failed to run direnv");
+    let output = args.build_command().output().expect("failed to run direnv");
 
-    let stdout = String::from_utf8(output.stdout).expect("failed to get stdout");
-    // let replace_regex = Regex::new(r#"(eval "\$\(")(.+)(" export .+\)";)"#).unwrap();
-    // let rg = Regex::new(r#"(eval "\$\(")(.+)(" export .+\)";)"#).unwrap();
-    // let a = rg.replace("eval \"$(\"/Users/b.caldwell/.nix-profile/bin/direnv\" export zsh)\";", "$1/path$3");
-
-    let direnv_path = which("direnv").unwrap().into_os_string().into_string().unwrap();
-    let direnv_pretty_path = env::current_exe().unwrap().into_os_string().into_string().unwrap();
-    let updated_output = stdout.replace(&direnv_path, &direnv_pretty_path);
-
+    // forward stderr as is
     println!(
-        "{}",
-        updated_output
-    );
-    eprintln!(
         "{}",
         String::from_utf8(output.stderr).expect("failed to get stdout")
     );
+
+    let stdout = String::from_utf8(output.stdout).expect("failed to get stdout");
+
+    // detect current direnv path and replace it with the pretty version
+    // pass the current path in as a flag --direnv
+    let direnv_path = which("direnv")
+        .unwrap()
+        .into_os_string()
+        .into_string()
+        .unwrap();
+    let direnv_pretty_path = env::current_exe()
+        .unwrap()
+        .into_os_string()
+        .into_string()
+        .unwrap();
+    let updated_output = stdout.replace(
+        &format!("\"{}\"", direnv_path),
+        &format!("\"{}\" --direnv {}", direnv_pretty_path, direnv_path),
+    );
+
+    println!("{}", updated_output);
 }
 
 fn run_export(args: Args) {
     let now = Instant::now();
-    let default_direnv = "direnv";
-    let output = Command::new(
-        args.direnv
-            .as_ref()
-            .unwrap_or(&default_direnv.to_string())
-            .to_string(),
-    ).args(&args.args)
+    let output = args
+        .build_command()
         .output()
         .expect("failed to execute process");
+
     // forward stdout as is
     println!(
         "{}",
