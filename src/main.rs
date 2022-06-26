@@ -111,14 +111,27 @@ fn run_export(args: Args) {
         .output()
         .expect("failed to execute process");
 
+    let mut debug_mode = env::var("PRETTY_DIRENV_DEBUG").is_ok();
+
     // forward stdout as is
     println!(
         "{}",
         String::from_utf8(output.stdout).expect("failed to get stdout")
     );
 
+    if output.status.code() != Some(0) {
+        eprintln!(
+            "direnv returned non zero exit code ({}). Enabling debug.",
+            output.status,
+        );
+        debug_mode = true;
+    }
+
     // update stderr to be pretty
     let stderr = String::from_utf8(output.stderr).expect("failed to get stdout");
+    if debug_mode {
+        eprintln!("{}", &stderr);
+    }
     let elapsed_time = now.elapsed();
     let time_str = if elapsed_time.subsec_millis() > LONG_EXEC_TIME {
         format!(" ({:.2}s)", elapsed_time.subsec_millis() as f32 / MS_TO_S)
