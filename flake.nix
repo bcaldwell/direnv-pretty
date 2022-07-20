@@ -12,7 +12,7 @@
           nativeBuildInputs = [
             pkgs.cargo
             pkgs.rustc
-            pkgs.rls
+            pkgs.rust-analyzer
             # pkgs.rustup
             pkgs.rustfmt
             pkgs.cargo-edit
