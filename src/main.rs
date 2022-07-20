@@ -22,6 +22,7 @@ const DIRENV: &'static str = concat!(
     "\x1b[38;5;249md\x1b[38;5;248mi\x1b[38;5;247mr\x1b[38;5;246me\x1b[38;5;245mn",
     "\x1b[38;5;244mv\x1b[38;5;240m",
 );
+const COLOR_RESET: &'static str = "\033[0m";
 
 const LONG_EXEC_TIME: u32 = 300;
 const MS_TO_S: f32 = 1000.0;
@@ -158,9 +159,9 @@ fn run_export(args: Args) {
             "".to_string()
         };
 
-        eprintln!("\x1b[1;34mactivated {}{}{}", DIRENV, features_str, time_str);
+        eprintln!("\x1b[1;34mactivated {}{}{}{}", DIRENV, features_str, time_str, COLOR_RESET);
     } else if stderr.contains("direnv: unloading") {
-        eprintln!("\x1b[1;34mdeactivated {}{}", DIRENV, time_str);
+        eprintln!("\x1b[1;34mdeactivated {}{}{}", DIRENV, time_str, COLOR_RESET);
     }
 }
 
