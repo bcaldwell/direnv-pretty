@@ -12,10 +12,11 @@
           nativeBuildInputs = [
             pkgs.cargo
             pkgs.rustc
-            pkgs.rls
+            # pkgs.rls
             # pkgs.rustup
             pkgs.rustfmt
             pkgs.cargo-edit
+            pkgs.rust-analyzer
           ];
           buildInputs = [ ];
           # Certain Rust tools won't work without this

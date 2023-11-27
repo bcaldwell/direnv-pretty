@@ -5,6 +5,7 @@
 // }
 //     eval "$(direnv export zsh 2> >( /Users/b.caldwell/code/src/github.com/bcaldwell/direnv-pretty/target/debug/direnv-pretty ))"
 //     eval "$("/nix/store/nqsbh35psklpnlv27zrqshn9vfmjdqdc-direnv-2.30.3/bin/direnv" export zsh | /Users/b.caldwell/code/src/github.com/bcaldwell/direnv-pretty/target/debug/direnv-pretty)"
+use spinners::{Spinner, Spinners};
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -22,9 +23,9 @@ const DIRENV: &'static str = concat!(
     "\x1b[38;5;249md\x1b[38;5;248mi\x1b[38;5;247mr\x1b[38;5;246me\x1b[38;5;245mn",
     "\x1b[38;5;244mv\x1b[38;5;240m",
 );
-const COLOR_RESET: &'static str = "\033[0m";
+const COLOR_RESET: &'static str = "\x1b[0m";
 
-const LONG_EXEC_TIME: u32 = 300;
+const LONG_EXEC_TIME: u128 = 300;
 const MS_TO_S: f32 = 1000.0;
 // const FEATURE_PREFIX:String = "use ".to_string();
 
@@ -107,12 +108,19 @@ fn run_hook(args: Args) {
 
 fn run_export(args: Args) {
     let now = Instant::now();
+    // todo this needs to move to stderr
+    let mut spinner = Spinner::with_timer_and_stream(
+        Spinners::Dots,
+        "loading environment".into(),
+        spinners::Stream::Stderr,
+    );
     let output = args
         .build_command()
         .output()
         .expect("failed to execute process");
-
-    let mut debug_mode = env::var("PRETTY_DIRENV_DEBUG").is_ok();
+    spinner.stop_with_message("".into());
+    // remove new line
+    eprint!("\x1b[1A");
 
     // forward stdout as is
     println!(
@@ -120,22 +128,18 @@ fn run_export(args: Args) {
         String::from_utf8(output.stdout).expect("failed to get stdout")
     );
 
-    if output.status.code() != Some(0) {
-        eprintln!(
-            "direnv returned non zero exit code ({}). Enabling debug.",
-            output.status,
-        );
-        debug_mode = true;
-    }
+    let stderr = String::from_utf8(output.stderr).expect("failed to get stdout");
+
+    let has_error = output.status.code() != Some(0) || output_has_error(&stderr);
+    let debug_mode = env::var("PRETTY_DIRENV_DEBUG").is_ok() || has_error;
 
     // update stderr to be pretty
-    let stderr = String::from_utf8(output.stderr).expect("failed to get stdout");
     if debug_mode {
         eprintln!("{}", &stderr);
     }
     let elapsed_time = now.elapsed();
-    let time_str = if elapsed_time.subsec_millis() > LONG_EXEC_TIME {
-        format!(" ({:.2}s)", elapsed_time.subsec_millis() as f32 / MS_TO_S)
+    let time_str = if elapsed_time.as_millis() > LONG_EXEC_TIME {
+        format!(" ({:.2}s)", elapsed_time.as_millis() as f32 / MS_TO_S)
     } else {
         "".to_string()
     };
@@ -159,9 +163,23 @@ fn run_export(args: Args) {
             "".to_string()
         };
 
-        eprintln!("\x1b[1;34mactivated {}{}{}{}", DIRENV, features_str, time_str, COLOR_RESET);
+        let action = if has_error {
+            "\x1b[1;31mfailed activating".to_string()
+        } else {
+            "\x1b[1;34mactivated".to_string()
+        };
+
+        eprintln!(
+            "{} {}{}{}{}",
+            action, DIRENV, features_str, time_str, COLOR_RESET
+        );
     } else if stderr.contains("direnv: unloading") {
-        eprintln!("\x1b[1;34mdeactivated {}{}{}", DIRENV, time_str, COLOR_RESET);
+        let action = if has_error {
+            "\x1b[1;31mfailed deactivating".to_string()
+        } else {
+            "\x1b[1;34mdeactivated".to_string()
+        };
+        eprintln!("{} {}{}{}", action, DIRENV, time_str, COLOR_RESET);
     }
 }
 
@@ -173,4 +191,14 @@ where
 {
     let file = File::open(filename)?;
     Ok(io::BufReader::new(file).lines())
+}
+
+fn output_has_error(output: &str) -> bool {
+    for line in output.lines() {
+        if line.starts_with("error: ") {
+            return true;
+        }
+    }
+
+    return false;
 }
