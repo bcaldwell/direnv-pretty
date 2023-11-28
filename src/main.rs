@@ -6,12 +6,12 @@
 //     eval "$(direnv export zsh 2> >( /Users/b.caldwell/code/src/github.com/bcaldwell/direnv-pretty/target/debug/direnv-pretty ))"
 //     eval "$("/nix/store/nqsbh35psklpnlv27zrqshn9vfmjdqdc-direnv-2.30.3/bin/direnv" export zsh | /Users/b.caldwell/code/src/github.com/bcaldwell/direnv-pretty/target/debug/direnv-pretty)"
 use spinners::{Spinner, Spinners};
-use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+use std::{env, thread};
 use which::which;
 
 use clap::Parser;
@@ -25,7 +25,7 @@ const DIRENV: &'static str = concat!(
 );
 const COLOR_RESET: &'static str = "\x1b[0m";
 
-const LONG_EXEC_TIME: u128 = 300;
+const LONG_EXEC_TIME: u128 = 250;
 const MS_TO_S: f32 = 1000.0;
 // const FEATURE_PREFIX:String = "use ".to_string();
 
@@ -108,19 +108,43 @@ fn run_hook(args: Args) {
 
 fn run_export(args: Args) {
     let now = Instant::now();
-    // todo this needs to move to stderr
-    let mut spinner = Spinner::with_timer_and_stream(
-        Spinners::Dots,
-        "loading environment".into(),
-        spinners::Stream::Stderr,
-    );
-    let output = args
+    let mut cmd = args
         .build_command()
-        .output()
-        .expect("failed to execute process");
-    spinner.stop_with_message("".into());
-    // remove new line
-    eprint!("\x1b[1A");
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    // only show the spinner for long running command runs
+    loop {
+        if now.elapsed().as_millis() >= LONG_EXEC_TIME {
+            break;
+        }
+        if let Some(_) = cmd.try_wait().expect("failed to execute process") {
+            break;
+        }
+
+        // Sleep for a short duration
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    let spinner = if let Some(_) = cmd.try_wait().expect("failed to execute process") {
+        None
+    } else {
+        Some(Spinner::with_timer_and_stream(
+            Spinners::Dots,
+            "loading environment".into(),
+            spinners::Stream::Stderr,
+        ))
+    };
+
+    let output = cmd.wait_with_output().expect("failed to execute process");
+
+    if let Some(mut spinner) = spinner {
+        spinner.stop_with_message("".into());
+        // remove new line
+        eprint!("\x1b[1A");
+    }
 
     // forward stdout as is
     println!(
