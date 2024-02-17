@@ -5,6 +5,7 @@
 // }
 //     eval "$(direnv export zsh 2> >( /Users/b.caldwell/code/src/github.com/bcaldwell/direnv-pretty/target/debug/direnv-pretty ))"
 //     eval "$("/nix/store/nqsbh35psklpnlv27zrqshn9vfmjdqdc-direnv-2.30.3/bin/direnv" export zsh | /Users/b.caldwell/code/src/github.com/bcaldwell/direnv-pretty/target/debug/direnv-pretty)"
+use anyhow::Result;
 use spinners::{Spinner, Spinners};
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -27,7 +28,9 @@ const COLOR_RESET: &'static str = "\x1b[0m";
 
 const LONG_EXEC_TIME: u128 = 250;
 const MS_TO_S: f32 = 1000.0;
-// const FEATURE_PREFIX:String = "use ".to_string();
+
+const DEBUG_MODE_ENV: &'static str = "PRETTY_DIRENV_DEBUG";
+const SILENT_MODE_ENV: &'static str = "PRETTY_DIRENV_SILENT";
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -65,7 +68,7 @@ fn main() {
     }
 
     match args.args[0].as_str() {
-        "export" => run_export(args),
+        "export" => run_export(args).expect("failed to run export command"),
         "hook" => run_hook(args),
         _ => run_default(args),
     };
@@ -106,7 +109,20 @@ fn run_hook(args: Args) {
     println!("{}", updated_output);
 }
 
-fn run_export(args: Args) {
+fn env_var_true(name: &str) -> bool {
+    match env::var(name) {
+        Ok(val) if val == "true" => true,
+        _ => false,
+    }
+}
+
+fn run_export(args: Args) -> Result<()> {
+    let silent_output = env_var_true(SILENT_MODE_ENV);
+    let mut output_stream: Box<dyn std::io::Write> = match silent_output {
+        true => Box::new(io::sink()),
+        false => Box::new(io::stderr()),
+    };
+
     let now = Instant::now();
     let mut cmd = args
         .build_command()
@@ -120,7 +136,7 @@ fn run_export(args: Args) {
         if now.elapsed().as_millis() >= LONG_EXEC_TIME {
             break;
         }
-        if let Some(_) = cmd.try_wait().expect("failed to execute process") {
+        if let Some(_) = cmd.try_wait()? {
             break;
         }
 
@@ -128,17 +144,21 @@ fn run_export(args: Args) {
         thread::sleep(Duration::from_millis(20));
     }
 
-    let spinner = if let Some(_) = cmd.try_wait().expect("failed to execute process") {
+    let spinner = if let Some(_) = cmd.try_wait()? {
         None
     } else {
-        Some(Spinner::with_timer_and_stream(
-            Spinners::Dots,
-            "loading environment".into(),
-            spinners::Stream::Stderr,
-        ))
+        if silent_output {
+            None
+        } else {
+            Some(Spinner::with_timer_and_stream(
+                Spinners::Dots,
+                "loading environment".into(),
+                spinners::Stream::Stderr,
+            ))
+        }
     };
 
-    let output = cmd.wait_with_output().expect("failed to execute process");
+    let output = cmd.wait_with_output()?;
 
     if let Some(mut spinner) = spinner {
         spinner.stop_with_message("".into());
@@ -147,20 +167,17 @@ fn run_export(args: Args) {
     }
 
     // forward stdout as is
-    println!(
-        "{}",
-        String::from_utf8(output.stdout).expect("failed to get stdout")
-    );
+    println!("{}", String::from_utf8(output.stdout)?);
 
-    let stderr = String::from_utf8(output.stderr).expect("failed to get stdout");
+    let stderr = String::from_utf8(output.stderr)?;
 
     let has_error = output.status.code() != Some(0) || output_has_error(&stderr);
-    let debug_mode = env::var("PRETTY_DIRENV_DEBUG").is_ok() || has_error;
+    let debug_mode = env_var_true(DEBUG_MODE_ENV) || has_error;
 
-    // update stderr to be pretty
     if debug_mode {
         eprintln!("{}", &stderr);
     }
+    // update stderr to be pretty
     let elapsed_time = now.elapsed();
     let time_str = if elapsed_time.as_millis() > LONG_EXEC_TIME {
         format!(" ({:.2}s)", elapsed_time.as_millis() as f32 / MS_TO_S)
@@ -193,18 +210,25 @@ fn run_export(args: Args) {
             "\x1b[1;34mactivated".to_string()
         };
 
-        eprintln!(
+        write!(
+            output_stream,
             "{} {}{}{}{}",
             action, DIRENV, features_str, time_str, COLOR_RESET
-        );
+        )?;
     } else if stderr.contains("direnv: unloading") {
         let action = if has_error {
             "\x1b[1;31mfailed deactivating".to_string()
         } else {
             "\x1b[1;34mdeactivated".to_string()
         };
-        eprintln!("{} {}{}{}", action, DIRENV, time_str, COLOR_RESET);
+        write!(
+            output_stream,
+            "{} {}{}{}",
+            action, DIRENV, time_str, COLOR_RESET
+        )?;
     }
+
+    Ok(())
 }
 
 // The output is wrapped in a Result to allow matching on errors
