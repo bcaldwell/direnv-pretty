@@ -5,7 +5,7 @@
 // }
 //     eval "$(direnv export zsh 2> >( /Users/b.caldwell/code/src/github.com/bcaldwell/direnv-pretty/target/debug/direnv-pretty ))"
 //     eval "$("/nix/store/nqsbh35psklpnlv27zrqshn9vfmjdqdc-direnv-2.30.3/bin/direnv" export zsh | /Users/b.caldwell/code/src/github.com/bcaldwell/direnv-pretty/target/debug/direnv-pretty)"
-use anyhow::Result;
+use anyhow::{Result, Context};
 use spinners::{Spinner, Spinners};
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -60,34 +60,36 @@ impl Args {
     }
 }
 
-fn main() {
+fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.args.len() == 0 {
-        return;
+        return Ok(());
     }
 
     match args.args[0].as_str() {
-        "export" => run_export(args).expect("failed to run export command"),
-        "hook" => run_hook(args),
-        _ => run_default(args),
-    };
+        "export" => run_export(args).context("failed to run export command"),
+        "hook" => run_hook(args).context("failed to run hook command"),
+        _ => run_default(args).context("fauled to run default command"),
+    }?;
+    Ok(())
 }
 
-fn run_default(args: Args) {
-    args.build_command().status().expect("failed to run direnv");
+fn run_default(args: Args) -> Result<()> {
+    args.build_command().status()?;
+    Ok(())
 }
 
-fn run_hook(args: Args) {
-    let output = args.build_command().output().expect("failed to run direnv");
+fn run_hook(args: Args) -> Result<()> {
+    let output = args.build_command().output().context("failed to run direnv")?;
 
     // forward stderr as is
     println!(
         "{}",
-        String::from_utf8(output.stderr).expect("failed to get stdout")
+        String::from_utf8(output.stderr).context("failed to get stdout")?
     );
 
-    let stdout = String::from_utf8(output.stdout).expect("failed to get stdout");
+    let stdout = String::from_utf8(output.stdout).context("failed to get stdout")?;
 
     // detect current direnv path and replace it with the pretty version
     // pass the current path in as a flag --direnv
@@ -107,6 +109,7 @@ fn run_hook(args: Args) {
     );
 
     println!("{}", updated_output);
+    Ok(())
 }
 
 fn env_var_true(name: &str) -> bool {
