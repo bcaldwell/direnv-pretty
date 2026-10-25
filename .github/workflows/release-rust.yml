@@ -4,88 +4,65 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build_artifacts:
-    name: Build artifacts for ${{ matrix.os }}
+    name: Build artifacts for ${{ matrix.asset_name_suffix }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
-          - name: linux
-            os: ubuntu-latest
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
             asset_name_suffix: x86_64-linux
-          - name: macos
-            os: macos-latest
+          - os: macos-latest
+            target: x86_64-apple-darwin
             asset_name_suffix: x86_64-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset_name_suffix: aarch64-darwin
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Setup toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Rename artifacts
-        run: mv target/release/direnv-pretty target/release/direnv-pretty-${{ matrix.asset_name_suffix }}
+        run: mv target/${{ matrix.target }}/release/direnv-pretty direnv-pretty-${{ matrix.asset_name_suffix }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: direnv-pretty-${{ matrix.asset_name_suffix }}
-          path: target/release/direnv-pretty-${{ matrix.asset_name_suffix }}
-
-  build_artifacts_m1:
-    name: Build artifacts for macos M1
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-
-      - name: Setup toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          target: aarch64-apple-darwin
-
-      - name: Build
-        run: cargo build --release --locked --target aarch64-apple-darwin
-
-      - name: Rename artifacts
-        run: mv target/aarch64-apple-darwin/release/direnv-pretty target/release/direnv-pretty-aarch64-darwin
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: direnv-pretty-aarch64-darwin
-          path: target/release/direnv-pretty-aarch64-darwin
+          path: direnv-pretty-${{ matrix.asset_name_suffix }}
 
   deploy_artifacts:
     name: Create release
-    needs: [build_artifacts, build_artifacts_m1]
+    needs: [build_artifacts]
     runs-on: ubuntu-latest
     steps:
-      - name: Create release directory
-        run: mkdir release
       - name: Get artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: release
-      - name: Generate Checksum
-        uses: jmgilman/actions-generate-checksum@v1.0.1
-        with:
-          patterns: "release/*/*"
+
+      - name: Generate checksum
+        run: sha256sum release/*/* > checksum.txt
+
       - run: ls -R release && cat checksum.txt
+
       - name: Create release with artifact
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag }}
           fail_on_unmatched_files: true
           generate_release_notes: true
           files: |
