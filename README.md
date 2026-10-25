@@ -2,11 +2,7 @@
 
 A thin wrapper around [direnv](https://direnv.net) that replaces its noisy output with a single status line:
 
-```
-activated direnv (flake) (1.20s)
-deactivated direnv
-failed activating direnv
-```
+![direnv-pretty output](docs/screenshot.png)
 
 When a `.envrc` takes longer than 250ms, a "loading environment" spinner is shown. The features listed come from the `use ...` lines in `.envrc`.
 
