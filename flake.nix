@@ -15,6 +15,7 @@
             # pkgs.rls
             # pkgs.rustup
             pkgs.rustfmt
+            pkgs.clippy
             pkgs.cargo-edit
             pkgs.rust-analyzer
           ];
